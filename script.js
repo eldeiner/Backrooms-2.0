@@ -37,7 +37,37 @@ const FLOOR = 0;
 const DOOR  = 2;
 const KEY   = 3;
 const SWITCH_TILE = 4; // new: switch/lever tile
+const textures = {};
+function initTextures() {
+    const size = 128;
+    // Pared 1: Ladrillos Sucios
+    const canvas1 = document.createElement('canvas');
+    canvas1.width = canvas1.height = size;
+    const c1 = canvas1.getContext('2d');
+    c1.fillStyle = '#1a1a1a'; c1.fillRect(0,0,size,size);
+    c1.fillStyle = '#2a2a2a';
+    for(let i=0; i<size; i+=32) {
+        for(let j=0; j<size; j+=16) {
+            c1.fillRect(i, j, 30, 14);
+            c1.fillStyle = `rgba(255,0,0,${Math.random()*0.05})`; // Sangre sutil
+            c1.fillRect(i,j,32,16);
+            c1.fillStyle = '#2a2a2a';
+        }
+    }
+    textures[1] = canvas1;
 
+    // Pared 2: Metal oxidado (Para puertas o zonas especiales)
+    const canvas2 = document.createElement('canvas');
+    canvas2.width = canvas2.height = size;
+    const c2 = canvas2.getContext('2d');
+    c2.fillStyle = '#333'; c2.fillRect(0,0,size,size);
+    for(let i=0; i<500; i++) {
+        c2.fillStyle = `rgba(100,50,0,${Math.random()*0.3})`;
+        c2.fillRect(Math.random()*size, Math.random()*size, 2, 2);
+    }
+    textures[2] = canvas2;
+}
+initTextures();
 const settings = {
     mouseSens:  0.0022,
     joyXSens:   1.0,
@@ -361,6 +391,7 @@ function playSwitchActivate(){
 // ═══════════════════════════════════════════
 // 5. TEXTURES
 // ═══════════════════════════════════════════
+
 const wallTex = (()=>{
     const c=document.createElement('canvas'); c.width=TEXSZ; c.height=TEXSZ;
     const x=c.getContext('2d');
@@ -1504,9 +1535,22 @@ function render3D(){
             const sg=Math.max(0,1-perpD/400)*(0.3+Math.sin(doorGlowPhase*1.4)*0.15);
             ctx.fillStyle=`rgba(0,180,255,${sg})`;
             ctx.fillRect(xp,top,rayW+1,wallH);
-        } else {
-            ctx.drawImage(wallTex,texX,0,1,TEXSZ,xp,top,rayW+1,wallH);
-        }
+        } // 1. Identificar qué textura usar según el número en el mapa
+// Si el mapa tiene un 1 usa ladrillos, si tiene un 5 usa metal, etc.
+let currentTex = myTextures[tileType] || myTextures[1];
+
+// 2. Dibujar la pared con la textura seleccionada
+ctx.drawImage(
+    currentTex, 
+    texX, 0, 1, TEXSZ,   // Recorte de la textura
+    xp, top, rayW + 1, wallH // Dibujo en pantalla
+);
+
+// 3. EFECTO DE SOMBRA (Súper importante para que se vea "pro")
+// Esto hace que las paredes lejanas se vean negras
+const shadow = Math.min(1, perpD / 600); // 600 es el alcance de la luz
+ctx.fillStyle = `rgba(0,0,0,${shadow})`;
+ctx.fillRect(xp, top, rayW + 1, wallH);
 
         // ── Smooth volumetric fog (no pixelation) ──
         // We use a SMOOTH gradient overlay, not per-strip rectangles for fog
