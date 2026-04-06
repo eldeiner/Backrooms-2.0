@@ -482,3 +482,8 @@ button:hover,button:active{color:#000;box-shadow:0 0 25px rgba(0,212,255,.4);}
 .distort-active {
     filter: contrast(1.4) saturate(1.5) hue-rotate(10deg);
 }
+
+#game-container{ --breath-blur: 0px; filter: blur(var(--breath-blur)); transition: filter 120ms linear; }
+
+.oxygen-wrap{display:flex;align-items:center;gap:6px;font-size:.65rem;color:#9ed3ff;margin-bottom:4px}
+.oxygen-bar{width:72px;height:6px;border:1px solid rgba(180,220,255,.4);background:linear-gradient(90deg,#5fd6ff,var(--accent));}
