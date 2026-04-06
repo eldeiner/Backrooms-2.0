@@ -50,6 +50,8 @@
             <h1 class="dead-text">LA OSCURIDAD TE CONSUMIÓ</h1>
             <p id="final-stats">Nivel: 1 | Puntos: 0</p>
             <button type="button" id="restart-btn">REINTENTAR</button>
+            <button type="button" id="gameover-home-btn">IR AL INICIO</button>
+            <button type="button" id="gameover-reroll-btn">RESETEAR ALEATORIO</button>
         </div>
     </div>
 
@@ -76,6 +78,10 @@
             <div id="tab-resume" class="tab-panel">
                 <p style="margin-bottom:1.5rem;opacity:.6">Presiona ESC para continuar</p>
                 <button type="button" id="resume-btn">CONTINUAR</button>
+                <div style="margin-top:1rem;display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
+                    <button type="button" id="pause-home-btn">IR AL INICIO</button>
+                    <button type="button" id="pause-reroll-btn">RESETEAR ALEATORIO</button>
+                </div>
             </div>
             <div id="tab-settings" class="tab-panel hidden">
                 <div class="settings-grid">
@@ -136,6 +142,7 @@
 
         <div class="hud-center-bottom">
             <div id="lantern-ui" class="lantern-panel">
+                <div class="oxygen-wrap"><span>OXI</span><div class="oxygen-bar" id="oxygen-bar"></div></div>
                 <span class="lantern-icon" id="lantern-icon">🔦</span>
                 <div class="battery-bar-wrap"><div class="battery-bar" id="battery-bar"></div></div>
                 <span class="battery-pct" id="battery-pct">100%</span>

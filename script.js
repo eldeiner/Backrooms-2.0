@@ -71,6 +71,13 @@ let doorPos      = null;
 let doorWallSide = null;
 let gameTime     = 0;
 
+let mapRooms      = [];
+let lampSources   = [];
+let cameraPitch   = 0;
+
+const CEILING_HEIGHT_FACTOR = 0.75; // lower wall projection => higher perceived ceiling
+const MAX_PITCH = 0.46;
+
 // ── Objective system ──
 let currentObjective = null; // { type, required, done, label }
 let objectiveDone    = false;
@@ -120,6 +127,15 @@ let stepTimer       = 0;
 let breathTimer     = 0;
 let heartbeatTimer  = 0;
 
+const breathState = {
+    max: 6.5,
+    value: 6.5,
+    recover: 2.1,
+    drain: 1.4,
+    holding: false,
+    forcedExhale: false,
+};
+
 // ── Camera angle independent of movement ──
 let cameraAngle = 0; // camera yaw (mouse only)
 
@@ -143,6 +159,7 @@ const enemy = {
     searchTimer: 0,
     lastSeenX: 0, lastSeenY: 0,
     hearingRadius: 320,
+    baseHearingRadius: 320,
     visionRadius: 640,
     visionAngle: Math.PI * 0.72,
     walkPhase: 0,
@@ -173,7 +190,54 @@ function noise(sec){
     return b;
 }
 
+
+const assetBank = {
+    textures: {
+        wall: null,
+        blood: null,
+    },
+    sounds: {
+        step: null,
+        exhale: null,
+        growl: null,
+    },
+};
+
+function loadImageAsset(url){
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+    return img;
+}
+
+function loadAudioAsset(url){
+    const a = new Audio(url);
+    a.preload = 'auto';
+    a.crossOrigin = 'anonymous';
+    return a;
+}
+
+function playSample(sample, volume=0.5, rate=1){
+    if(!sample) return false;
+    const clip = sample.cloneNode(true);
+    clip.volume = volume;
+    clip.playbackRate = rate;
+    clip.play().catch(()=>{});
+    return true;
+}
+
+function preloadRealismAssets(){
+    // src/url-based assets with graceful fallback to procedural rendering/synthesis.
+    assetBank.textures.wall = loadImageAsset('https://images.unsplash.com/photo-1618221469555-7f3ad97540d6?auto=format&fit=crop&w=512&q=80');
+    assetBank.textures.blood = loadImageAsset('https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=512&q=80');
+
+    assetBank.sounds.step = loadAudioAsset('https://cdn.pixabay.com/download/audio/2021/08/04/audio_c839919df2.mp3?filename=footstep-on-concrete-6327.mp3');
+    assetBank.sounds.exhale = loadAudioAsset('https://cdn.pixabay.com/download/audio/2022/03/22/audio_eca987c6d7.mp3?filename=heavy-breathing-6165.mp3');
+    assetBank.sounds.growl = loadAudioAsset('https://cdn.pixabay.com/download/audio/2022/03/15/audio_a0f9ea6b0f.mp3?filename=monster-growl-6054.mp3');
+}
+
 function playStep(run){
+    if(playSample(assetBank.sounds.step, run?0.34:0.24, run?1.1:0.9)) return;
     if(!audioCtx) return;
     const t=audioCtx.currentTime;
     const o=audioCtx.createOscillator(), g=audioCtx.createGain();
@@ -287,6 +351,7 @@ function playDeathSound(){
 
 // Terrifying enemy approach sound
 function playEnemyGrowl(intensity){
+    if(intensity>=0.3&&playSample(assetBank.sounds.growl, Math.min(0.8,0.35+intensity*0.3), 0.8+intensity*0.35)) return;
     if(!audioCtx||intensity<0.3) return;
     const t=audioCtx.currentTime;
     // Low vibrating growl
@@ -541,6 +606,13 @@ function generateDungeon(){
         });
     }
     for(let i=0;i<rooms.length-1;i++) connectRooms(rooms[i],rooms[i+1]);
+    // Extra anti-labyrinth carve passes for natural shapes
+    for(let n=0;n<Math.floor(MAPSZ*1.8);n++){
+        const cx=randInt(2,MAPSZ-2), cy=randInt(2,MAPSZ-2);
+        if(Math.random()<0.65){
+            for(let y=-1;y<=1;y++) for(let x=-1;x<=1;x++) if(map[cy+y]&&map[cy+y][cx+x]===WALL&&Math.random()<0.55) map[cy+y][cx+x]=FLOOR;
+        }
+    }
     for(let i=0;i<Math.floor(rooms.length*0.4);i++){
         const a=rooms[randInt(0,rooms.length)], b=rooms[randInt(0,rooms.length)];
         if(a!==b) connectRooms(a,b);
@@ -577,6 +649,9 @@ function generateDungeon(){
     // Place ghosts
     ghosts=[];
     spawnGhost(rooms);
+
+    mapRooms = rooms;
+    lampSources = buildLampSources(rooms);
 
     if(level===1){ inventory.keys=0; updateInventoryUI(); }
 }
@@ -679,6 +754,16 @@ function safeFloor(y,x){
     if(y>=0&&y<MAPSZ&&x>=0&&x<MAPSZ&&map[y][x]===WALL) map[y][x]=FLOOR;
 }
 
+function buildLampSources(rooms){
+    const lamps=[];
+    for(const r of rooms.slice(1,-1)){
+        if(Math.random()<0.7){
+            lamps.push({x:(r.cx+0.5)*TILE,y:(r.cy+0.5)*TILE,flicker:Math.random()<0.55,phase:Math.random()*Math.PI*2,intensity:0.7+Math.random()*0.5});
+        }
+    }
+    return lamps;
+}
+
 // ═══════════════════════════════════════════
 // 6b. NODE GRAPH FOR AI PATROL
 // ═══════════════════════════════════════════
@@ -765,10 +850,15 @@ function updateEnemy(dt){
     while(diff>Math.PI) diff-=Math.PI*2;
     while(diff<-Math.PI) diff+=Math.PI*2;
 
+    const isHoldingBreath = breathState.holding;
+    const speedNoise = Math.abs(player.speed)>0.5;
+    const runningLoud = Math.abs(player.speed)>(SPEED_WALK+0.2);
     const inCone = Math.abs(diff)<enemy.visionAngle*0.5 && dist<enemy.visionRadius;
-    const inHear = dist<enemy.hearingRadius && Math.abs(player.speed)>0.5;
     const los    = dist<enemy.visionRadius && hasLOS(enemy.x,enemy.y,player.x,player.y);
-    const detected = (inCone&&los)||(inHear&&dist<enemy.hearingRadius*0.65);
+    // Sin linterna y sin correr, el enemigo no debería detectar de forma injusta.
+    const canVisuallyDetect = lantern.on || dist<140 || enemy.state==='chase';
+    const inHear = !isHoldingBreath && dist<enemy.hearingRadius && (runningLoud || (speedNoise&&lantern.on));
+    const detected = (inCone&&los&&canVisuallyDetect)||(inHear&&los);
 
     enemy.walkPhase += enemy.speed * dt * 0.12;
 
@@ -1093,6 +1183,7 @@ function onKeyAction(e){
 window.addEventListener('mousemove',e=>{
     if(isRunning&&!isPaused&&!isDying&&document.pointerLockElement===canvas){
         cameraAngle+=e.movementX*settings.mouseSens;
+        cameraPitch=Math.max(-MAX_PITCH, Math.min(MAX_PITCH, cameraPitch + e.movementY*settings.mouseSens*0.65));
     }
 });
 canvas.addEventListener('click',()=>{
@@ -1190,7 +1281,10 @@ document.getElementById('mob-pause').addEventListener('touchstart',e=>{ e.preven
 // ═══════════════════════════════════════════
 function updateLogic(dt){
     // ── Movement — WASD/arrows strafe ONLY (no rotation) ──
-    const sprinting = keys_held[settings.keys.sprint]||mobRunHeld;
+    const holdingBreathKey = keys_held['ShiftLeft']||keys_held['ShiftRight']||keys_held['AltLeft']||keys_held['AltRight'];
+    breathState.holding = !!holdingBreathKey;
+
+    const sprinting = (keys_held[settings.keys.sprint]||mobRunHeld) && !breathState.holding;
     player.maxSpeed = sprinting ? SPEED_RUN : SPEED_WALK;
 
     let moveForward = keys_held['KeyW']||keys_held['ArrowUp']   ? 1 : 0;
@@ -1245,8 +1339,30 @@ function updateLogic(dt){
     // ── Steps ──
     if(moving&&Math.abs(player.speed)>0.4){
         stepTimer-=dt;
-        if(stepTimer<=0){ playStep(sprinting); stepTimer=sprinting?0.27:0.5; }
+        if(stepTimer<=0){
+            if(!breathState.holding) playStep(sprinting);
+            stepTimer=sprinting?0.27:0.5;
+        }
     } else stepTimer=0;
+
+    enemy.hearingRadius = breathState.holding ? 0 : enemy.baseHearingRadius;
+
+    if(breathState.holding){
+        breathState.value=Math.max(0, breathState.value-breathState.drain*dt);
+        if(breathState.value===0&&!breathState.forcedExhale){
+            breathState.forcedExhale=true;
+            breathState.holding=false;
+            playSample(assetBank.sounds.exhale,0.75,1);
+            playBreath(1);
+            enemy.state='chase';
+            enemy.lastSeenX=player.x; enemy.lastSeenY=player.y;
+        }
+    } else {
+        breathState.value=Math.min(breathState.max, breathState.value+breathState.recover*dt);
+        if(breathState.value>breathState.max*0.35) breathState.forcedExhale=false;
+    }
+    const blurAmt = breathState.holding ? (1.6 + (1-breathState.value/breathState.max)*2.4) : 0;
+    document.getElementById('game-container').style.setProperty('--breath-blur', `${blurAmt.toFixed(2)}px`);
 
     // ── Lantern battery ──
     if(lantern.on){
@@ -1439,7 +1555,7 @@ function startDeath(){
 let doorGlowPhase=0;
 
 function render3D(){
-    const W=canvas.width, H=canvas.height, HH=H*0.5;
+    const W=canvas.width, H=canvas.height, HH=H*0.5 + cameraPitch*H*0.22;
     doorGlowPhase+=0.04;
 
     const ambientLight = lantern.on ? lantern.battery/100*0.18 : 0.018;
@@ -1483,7 +1599,7 @@ function render3D(){
 
         const perpD=(side===0?(sdX-deltaX):(sdY-deltaY))*TILE;
         zBuffer[i]=perpD;
-        const wallH=Math.min(H*6,(TILE*H)/perpD);
+        const wallH=Math.min(H*6,(TILE*H*CEILING_HEIGHT_FACTOR)/perpD);
         const top=HH-wallH*0.5, bot=HH+wallH*0.5;
 
         let wx;
@@ -1506,10 +1622,29 @@ function render3D(){
             ctx.fillRect(xp,top,rayW+1,wallH);
         } else {
             ctx.drawImage(wallTex,texX,0,1,TEXSZ,xp,top,rayW+1,wallH);
+            if(((mapX*19 + mapY*13)%17===0) && Math.random()<0.012){
+                ctx.fillStyle='rgba(120,0,0,0.35)';
+                ctx.fillRect(xp,top+wallH*0.55,rayW+1,wallH*0.4);
+            }
         }
 
         // ── Smooth volumetric fog (no pixelation) ──
         // We use a SMOOTH gradient overlay, not per-strip rectangles for fog
+        // Lamp light from ceiling fixtures
+        let lampBoost=0;
+        const hitX=player.x+cosA*perpD, hitY=player.y+sinA*perpD;
+        for(const lamp of lampSources){
+            const ld=Math.hypot(hitX-lamp.x, hitY-lamp.y);
+            if(ld<360){
+                const flick=lamp.flicker?(0.45+Math.abs(Math.sin(gameTime*7+lamp.phase))*0.55):1;
+                lampBoost += Math.max(0,1-ld/360)*0.26*lamp.intensity*flick;
+            }
+        }
+        if(lampBoost>0.02){
+            ctx.fillStyle=`rgba(255,240,190,${Math.min(0.32,lampBoost)})`;
+            ctx.fillRect(xp,top,rayW+1,wallH);
+        }
+
         const fog=Math.min(0.98,perpD/lightR);
         ctx.fillStyle=`rgba(0,0,0,${fog})`;
         ctx.fillRect(xp,top,rayW+1,wallH);
@@ -1711,6 +1846,20 @@ function renderEnemySprite(){
         }
     }
 
+    // Black smoke around enemy
+    const smokeCount=6;
+    for(let i=0;i<smokeCount;i++){
+        const t=gameTime*1.2+i*0.7;
+        const sx=screenX+Math.sin(t*1.7+i)*sprW*0.2;
+        const sy=H*0.5+sprH*0.1-Math.abs(Math.sin(t))*sprH*0.35;
+        const sr=Math.max(10,sprW*0.18+i*2);
+        const sg=ctx.createRadialGradient(sx,sy,2,sx,sy,sr);
+        sg.addColorStop(0,'rgba(20,20,20,0.45)');
+        sg.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=sg;
+        ctx.beginPath(); ctx.arc(sx,sy,sr,0,Math.PI*2); ctx.fill();
+    }
+
     if(dist<400){
         const eyeVis=Math.max(0,1-dist/400);
         const eyeY=H*0.5-sprH*0.36;
@@ -1762,6 +1911,18 @@ window.addEventListener('resize',resize);
 // ═══════════════════════════════════════════
 // 16. STORY SCREENS BETWEEN LEVELS
 // ═══════════════════════════════════════════
+
+function maybeShowCreepypasta(){
+    if(Math.random()>0.5) return;
+    const lines=[
+        'JEFF THE KILLER TE MIRA DESDE LA NIEBLA',
+        'SLENDERMAN YA CONOCE TU RUTA',
+        'SMILE DOG SUSURRA EN LAS PAREDES',
+        'BEN DROWNED TE ESPERA EN EL SIGUIENTE PASILLO',
+    ];
+    showWhisperText(lines[Math.floor(Math.random()*lines.length)]);
+}
+
 const STORY_TEXTS = [
     null, // level 1 has no intro (covered by start screen)
     {
@@ -1825,6 +1986,7 @@ function advanceLevel(){
     fearDirector.tension=0;
     fearDirector.eventCooldown=5;
     generateDungeon();
+    maybeShowCreepypasta();
     if(!isMobile) canvas.requestPointerLock();
 }
 
@@ -1837,6 +1999,10 @@ function initGame(){
     inventory.keys=0; lantern.battery=100; lantern.on=false;
     bobPhase=0; bobOffset=0; gameTime=0;
     sanity.value=100; sanity.distortion=0;
+    cameraPitch=0;
+    breathState.value=breathState.max;
+    breathState.holding=false;
+    breathState.forcedExhale=false;
     fearDirector.tension=0; fearDirector.eventCooldown=8;
     fearDirector.silenceActive=false;
     horrorEvents=[];
@@ -1914,6 +2080,11 @@ function updateLanternUI(){
     pct.textContent=Math.ceil(lantern.battery)+'%';
     bar.classList.toggle('low',lantern.battery<20);
     if(panel) panel.classList.toggle('active',lantern.on);
+    const oxy=document.getElementById('oxygen-bar');
+    if(oxy){
+        const p=Math.max(0,Math.min(100,(breathState.value/breathState.max)*100));
+        oxy.style.background=`linear-gradient(90deg,#5fd6ff ${p}%, rgba(60,20,20,0.9) ${p}%)`;
+    }
 }
 
 function toggleLantern(){
@@ -1998,6 +2169,8 @@ document.getElementById('save-settings-btn').addEventListener('click',()=>{
 // ═══════════════════════════════════════════
 // 19. BUTTONS & MOBILE INIT
 // ═══════════════════════════════════════════
+preloadRealismAssets();
+
 document.getElementById('start-btn').addEventListener('click',()=>{
     ensureAudio();
     document.getElementById('start-screen').classList.add('hidden');
@@ -2031,3 +2204,26 @@ if(storyContinue){
         e.preventDefault(); storyContinue.click();
     },{passive:false});
 }
+
+
+function goToStartMenu(){
+    isRunning=false;
+    isPaused=false;
+    if(document.pointerLockElement) document.exitPointerLock();
+    document.getElementById('pause-screen').classList.add('hidden');
+    document.getElementById('game-over').classList.add('hidden');
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('crosshair').classList.add('hidden');
+    document.getElementById('start-screen').classList.remove('hidden');
+}
+
+function rerollRun(){
+    document.getElementById('pause-screen').classList.add('hidden');
+    document.getElementById('game-over').classList.add('hidden');
+    initGame();
+}
+
+document.getElementById('pause-home-btn')?.addEventListener('click',goToStartMenu);
+document.getElementById('gameover-home-btn')?.addEventListener('click',goToStartMenu);
+document.getElementById('pause-reroll-btn')?.addEventListener('click',rerollRun);
+document.getElementById('gameover-reroll-btn')?.addEventListener('click',rerollRun);
