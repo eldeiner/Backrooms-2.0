@@ -463,3 +463,22 @@ button:hover,button:active{color:#000;box-shadow:0 0 25px rgba(0,212,255,.4);}
     .hud-objective{font-size:.75rem;padding:5px 12px;}
     .obj-text{font-size:.7rem;}
 }
+/* Sanity */
+#sanity-fill {
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(255, 0, 34, 0.6);
+}
+
+.sanity-panic {
+    animation: sanity-pulse 0.4s infinite alternate;
+}
+
+@keyframes sanity-pulse {
+    from { filter: brightness(1); transform: scaleY(1); }
+    to { filter: brightness(1.8); transform: scaleY(1.2); }
+}
+
+/* Efecto de viñeta para la distorsión visual */
+.distort-active {
+    filter: contrast(1.4) saturate(1.5) hue-rotate(10deg);
+}
