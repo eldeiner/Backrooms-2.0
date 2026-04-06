@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Deep Labyrinth 3D</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="rotate-screen">
+    <div class="rotate-content">
+        <div class="rotate-icon">↺</div>
+        <p>Gira tu dispositivo<br>a modo <strong>horizontal</strong></p>
+    </div>
+</div>
+
+<div id="game-container">
+    <canvas id="canvas3D"></canvas>
+    <div id="danger-vignette" class="vignette hidden"></div>
+    <div id="death-overlay" class="death-overlay hidden"></div>
+
+    <!-- START -->
+    <div id="start-screen" class="overlay">
+        <div class="content">
+            <div class="title-wrapper">
+                <h1>DEEP LABYRINTH</h1>
+                <div class="subtitle">THE RED MIST</div>
+            </div>
+            <p>Encuentra la llave. Abre la puerta. Escapa antes de que te alcance.</p>
+            <p class="hint">⚠ Cuidado con la niebla roja... y con tu cordura.</p>
+            <button type="button" id="start-btn">INICIAR JUEGO</button>
+            <div class="controls-grid">
+                <div class="ctrl"><span>WASD</span> Moverse/Strafearse</div>
+                <div class="ctrl"><span>MOUSE</span> Girar cámara</div>
+                <div class="ctrl"><span>SHIFT</span> Correr</div>
+                <div class="ctrl"><span>E</span> Linterna</div>
+                <div class="ctrl"><span>F</span> Recoger/Activar</div>
+                <div class="ctrl"><span>ESC</span> Pausa</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME OVER -->
+    <div id="game-over" class="overlay hidden">
+        <div class="content">
+            <h1 class="dead-text">LA OSCURIDAD TE CONSUMIÓ</h1>
+            <p id="final-stats">Nivel: 1 | Puntos: 0</p>
+            <button type="button" id="restart-btn">REINTENTAR</button>
+        </div>
+    </div>
+
+    <!-- STORY SCREEN -->
+    <div id="story-screen" class="overlay hidden">
+        <div class="content story-content">
+            <div class="story-level-tag" id="story-level-tag">NIVEL 2</div>
+            <h1 id="story-title" class="story-title">EL LABERINTO RESPIRA</h1>
+            <div class="story-divider">✦ ✦ ✦</div>
+            <p id="story-body" class="story-body">Algo se mueve entre las sombras...</p>
+            <p id="story-hint" class="story-hint-text">⚠ El monstruo ahora recuerda tu olor.</p>
+            <button type="button" id="story-continue-btn">CONTINUAR →</button>
+        </div>
+    </div>
+
+    <!-- PAUSE -->
+    <div id="pause-screen" class="overlay hidden">
+        <div class="content wide-content">
+            <h1>PAUSA</h1>
+            <div class="pause-tabs">
+                <button type="button" class="tab-btn active" data-tab="tab-resume">JUEGO</button>
+                <button type="button" class="tab-btn" data-tab="tab-settings">CONTROLES</button>
+            </div>
+            <div id="tab-resume" class="tab-panel">
+                <p style="margin-bottom:1.5rem;opacity:.6">Presiona ESC para continuar</p>
+                <button type="button" id="resume-btn">CONTINUAR</button>
+            </div>
+            <div id="tab-settings" class="tab-panel hidden">
+                <div class="settings-grid">
+                    <div class="setting-row">
+                        <label>Sensibilidad Joystick X</label>
+                        <div class="slider-row">
+                            <input type="range" id="sens-x" min="0.5" max="5" step="0.1" value="1">
+                            <span id="sens-x-val">1.0</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label>Sensibilidad Joystick Y</label>
+                        <div class="slider-row">
+                            <input type="range" id="sens-y" min="0.5" max="5" step="0.1" value="1">
+                            <span id="sens-y-val">1.0</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label>Sensibilidad Mouse</label>
+                        <div class="slider-row">
+                            <input type="range" id="sens-mouse" min="0.5" max="5" step="0.1" value="1">
+                            <span id="sens-mouse-val">1.0</span>
+                        </div>
+                    </div>
+                    <div class="setting-divider">Reasignar Teclas</div>
+                    <div class="setting-row">
+                        <label>Linterna</label>
+                        <button type="button" class="keybind-btn" data-action="lantern" id="keybind-lantern">E</button>
+                    </div>
+                    <div class="setting-row">
+                        <label>Correr</label>
+                        <button type="button" class="keybind-btn" data-action="sprint" id="keybind-sprint">SHIFT</button>
+                    </div>
+                    <div class="setting-row">
+                        <label>Recoger/Activar</label>
+                        <button type="button" class="keybind-btn" data-action="pickup" id="keybind-pickup">F</button>
+                    </div>
+                </div>
+                <button type="button" id="save-settings-btn" style="margin-top:1.5rem">GUARDAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+        <div class="hud-left">
+            <div class="hud-stat"><span class="hud-label">NVL</span><span id="ui-level">1</span></div>
+            <div class="hud-stat time-stat" style="display:none"><span class="hud-label">TMP</span><span id="ui-time">∞</span><span class="hud-unit">s</span></div>
+            <div class="hud-stat"><span class="hud-label">PTS</span><span id="ui-score">0</span></div>
+        </div>
+
+        <!-- OBJECTIVE PANEL -->
+        <div class="hud-objective" id="hud-objective">
+            <div class="obj-label">OBJ</div>
+            <div class="obj-text" id="ui-objective">Encuentra la llave</div>
+            <div class="obj-progress" id="ui-obj-progress"></div>
+        </div>
+
+        <div class="hud-center-bottom">
+            <div id="lantern-ui" class="lantern-panel">
+                <span class="lantern-icon" id="lantern-icon">🔦</span>
+                <div class="battery-bar-wrap"><div class="battery-bar" id="battery-bar"></div></div>
+                <span class="battery-pct" id="battery-pct">100%</span>
+            </div>
+        </div>
+        <div class="hud-right">
+            <div class="inventory-panel">
+                <div class="inv-label">INV</div>
+                <div id="inventory-slots">
+                    <div class="inv-slot" id="slot-key">
+                        <span class="inv-icon">🗝</span>
+                        <span class="inv-count" id="key-count">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OBJECTIVE COMPLETE TOAST -->
+    <div id="obj-complete" class="obj-complete-toast hidden">
+        <span class="obj-complete-icon">✦</span>
+        <span class="obj-complete-text">¡OBJETIVO COMPLETADO!</span>
+        <span class="obj-complete-icon">✦</span>
+    </div>
+
+    <div id="pickup-prompt" class="pickup-prompt hidden"><span id="pickup-text">Presiona <strong>F</strong> para recoger</span></div>
+    <div id="door-prompt" class="pickup-prompt door-prompt hidden">🔒 Necesitas una llave</div>
+    <div id="crosshair" class="crosshair hidden">·</div>
+
+    <!-- MOBILE CONTROLS -->
+    <div id="mobile-controls" class="hidden">
+        <div id="joystick-left" class="joystick-zone">
+            <div class="joystick-base"><div class="joystick-knob" id="knob-left"></div></div>
+        </div>
+        <div id="joystick-right" class="joystick-zone look-zone"></div>
+        <div id="action-btns">
+            <button type="button" class="mob-btn" id="mob-run">🏃<br><span>RUN</span></button>
+            <button type="button" class="mob-btn" id="mob-lantern">🔦<br><span>LUZ</span></button>
+            <button type="button" class="mob-btn" id="mob-pickup">✋<br><span>COGER</span></button>
+        </div>
+        <button type="button" id="mob-pause" class="mob-pause-btn">❚❚</button>
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
