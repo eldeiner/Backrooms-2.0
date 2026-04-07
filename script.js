@@ -1647,6 +1647,7 @@ function render3D(){
 
         const fog=Math.min(0.98,perpD/lightR);
         ctx.fillStyle=`rgba(0,0,0,${fog})`;
+        
         ctx.fillRect(xp,top,rayW+1,wallH);
 
         if(side===1){ ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.fillRect(xp,top,rayW+1,wallH); }
